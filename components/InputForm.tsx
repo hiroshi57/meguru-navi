@@ -131,18 +131,19 @@ export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => vo
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-black/70">移動時間</label>
+          <label className="mb-2 block text-sm font-medium text-black/70">使える時間（滞在込み合計）</label>
           <select
             className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
             value={params.durationMinutes}
             onChange={(e) => setParams((p) => ({ ...p, durationMinutes: Number(e.target.value) }))}
           >
-            {DURATION_OPTIONS.map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {minutes >= 60 ? `${minutes / 60}時間` : `${minutes}分`}
+            {DURATION_OPTIONS.map((d) => (
+              <option key={d.minutes} value={d.minutes}>
+                {d.label}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-black/40">移動時間＋各スポットの滞在時間を合わせた合計時間です</p>
         </div>
 
         <div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { TRANSPORTS } from "@/lib/moods";
 import {
   AgeBracket,
   BudgetId,
@@ -8,13 +9,32 @@ import {
   Purpose,
   SpecialCondition,
   Spot,
+  TransportId,
   Vibe,
 } from "@/lib/types";
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const SEARCH_RADIUS_METERS = 1500;
+const DEFAULT_SEARCH_RADIUS_METERS = 1500;
+const MIN_SEARCH_RADIUS_METERS = 800;
+const MAX_SEARCH_RADIUS_METERS = 15000;
+/** 使える時間のうち、実際に「拠点から離れる」ことに使える割合の目安（往復・複数スポット訪問を考慮） */
+const RADIUS_TIME_FRACTION = 0.25;
 /** 賑やかさの目安。1=静か 〜 5=大人数向け・ハイテンション。除外ルールの判定に使う。 */
 type EnergyLevel = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * 使える時間と移動手段から検索半径(m)を見積もる。
+ * 「半日・1日」等の長時間コースでは固定1.5km圏内では狭すぎるため、
+ * 移動手段の速度 × 時間 × 割合 で拠点からの実質行動範囲を概算し、半径として使う。
+ */
+function calcSearchRadiusMeters(durationMinutes: number | null, transportId: TransportId | null): number {
+  if (!durationMinutes || !transportId) return DEFAULT_SEARCH_RADIUS_METERS;
+  const transport = TRANSPORTS.find((t) => t.id === transportId);
+  if (!transport) return DEFAULT_SEARCH_RADIUS_METERS;
+
+  const raw = transport.speedKmh * (durationMinutes / 60) * 1000 * RADIUS_TIME_FRACTION;
+  return Math.min(MAX_SEARCH_RADIUS_METERS, Math.max(MIN_SEARCH_RADIUS_METERS, Math.round(raw)));
+}
 
 interface MoodQuery {
   type: string;
@@ -67,11 +87,14 @@ const VIBE_KEYWORDS: Record<Vibe, string> = {
   lively: "人気 賑わい",
 };
 
-const SPECIAL_CONDITION_KEYWORDS: Record<SpecialCondition, string> = {
+/**
+ * こだわり条件のうち検索keywordに載せるもの。pet_friendlyは意図的に含めない
+ * （「ペット可」を強調すると検索結果がペット専門施設に偏るため。除外はせず条件としてのみ保持する）。
+ */
+const SPECIAL_CONDITION_KEYWORDS: Partial<Record<SpecialCondition, string>> = {
   no_stairs: "バリアフリー",
   no_alcohol: "ノンアルコール",
   no_smoking: "禁煙",
-  pet_friendly: "ペット可",
 };
 
 /** ラーメン/洋食/そばは「restaurant」タイプのkeywordを差し替えて絞り込む。 */
@@ -166,11 +189,12 @@ async function geocodeArea(areaLabel: string): Promise<{ lat: number; lng: numbe
 
 async function nearbySearch(
   origin: { lat: number; lng: number },
-  query: MoodQuery
+  query: MoodQuery,
+  radiusMeters: number
 ): Promise<GooglePlace[]> {
   const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
   url.searchParams.set("location", `${origin.lat},${origin.lng}`);
-  url.searchParams.set("radius", String(SEARCH_RADIUS_METERS));
+  url.searchParams.set("radius", String(radiusMeters));
   url.searchParams.set("type", query.type);
   if (query.keyword) url.searchParams.set("keyword", query.keyword);
   url.searchParams.set("language", "ja");
@@ -202,6 +226,10 @@ export async function GET(req: NextRequest) {
   const indoorOutdoor = (searchParams.get("indoorOutdoor") as IndoorOutdoor | null) ?? "either";
   const specialConditions = parseSpecialConditions(searchParams.get("specialConditions"));
   const cuisine = (searchParams.get("cuisine") as Cuisine | null) ?? "any";
+  const transport = searchParams.get("transport") as TransportId | null;
+  const durationMinutes = searchParams.get("durationMinutes")
+    ? Number(searchParams.get("durationMinutes"))
+    : null;
 
   if (!areaLabel || !mood || !MOOD_QUERIES[mood]) {
     return NextResponse.json({ error: "areaLabel と mood は必須です" }, { status: 400 });
@@ -212,8 +240,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `「${areaLabel}」の場所が見つかりませんでした` }, { status: 404 });
   }
 
+  const radiusMeters = calcSearchRadiusMeters(durationMinutes, transport);
   const queries = buildEffectiveQueries(mood, { ageBracket, purpose, vibe, indoorOutdoor, specialConditions, cuisine });
-  const resultsByQuery = await Promise.all(queries.map((q) => nearbySearch(origin, q)));
+  const resultsByQuery = await Promise.all(queries.map((q) => nearbySearch(origin, q, radiusMeters)));
 
   const seen = new Set<string>();
   const spots: Spot[] = [];

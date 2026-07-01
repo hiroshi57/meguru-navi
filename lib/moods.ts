@@ -33,7 +33,12 @@ export const TRANSPORTS: { id: TransportId; label: string; speedKmh: number }[] 
   { id: "car", label: "車", speedKmh: 16 },
 ];
 
-export const DURATION_OPTIONS = [60, 90, 120, 180, 240] as const;
+export const DURATION_OPTIONS: { minutes: number; label: string }[] = [
+  { minutes: 120, label: "ちょい寄り道（〜2時間）" },
+  { minutes: 180, label: "数時間（〜3時間）" },
+  { minutes: 300, label: "半日（〜5時間）" },
+  { minutes: 540, label: "1日（〜9時間）" },
+];
 
 export const PARTY_SIZE_OPTIONS = [1, 2, 3, 4, 5] as const;
 

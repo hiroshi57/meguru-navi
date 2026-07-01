@@ -1,10 +1,18 @@
 import { TRANSPORTS } from "./moods";
 import { Course, CourseStop, LatLng, MealTiming, SearchParams, Spot } from "./types";
 
-const MAX_STOPS_BY_PACE: Record<SearchParams["pace"], number> = {
-  relaxed: 3,
-  packed: 6,
+/** 1時間あたりに無理なく周れる目安の件数（ペース別）。使える時間が長いほど訪問数の上限を伸ばす。 */
+const STOPS_PER_HOUR_BY_PACE: Record<SearchParams["pace"], number> = {
+  relaxed: 1,
+  packed: 1.5,
 };
+const MIN_STOPS = 2;
+const MAX_STOPS_HARD_CAP = 10;
+
+function calcMaxStops(durationMinutes: number, pace: SearchParams["pace"]): number {
+  const raw = Math.round((durationMinutes / 60) * STOPS_PER_HOUR_BY_PACE[pace]);
+  return Math.min(MAX_STOPS_HARD_CAP, Math.max(MIN_STOPS, raw));
+}
 
 const MEAL_CATEGORY_KEYWORDS = ["レストラン", "バー", "カフェ"];
 
@@ -40,6 +48,8 @@ async function fetchSpots(params: SearchParams): Promise<{ origin: LatLng; spots
     indoorOutdoor: params.indoorOutdoor,
     specialConditions: params.specialConditions.join(","),
     cuisine: params.cuisine,
+    transport: params.transport,
+    durationMinutes: String(params.durationMinutes),
   });
 
   const res = await fetch(`/api/spots?${query.toString()}`);
@@ -74,26 +84,18 @@ async function fetchLegMinutes(from: LatLng, to: LatLng, transport: SearchParams
  * origin から出発し、直線距離ベースの貪欲法で訪問順を仮決めする（API呼び出しなし・高速）。
  * 実移動時間は後段の refineWithRealDurations で置き換える。ペースに応じて訪問数の上限を変える。
  */
-function pickGreedyOrder(
-  origin: LatLng,
-  candidates: Spot[],
-  skipFirstNearest: boolean,
-  maxStops: number
-): Spot[] {
+function pickGreedyOrder(origin: LatLng, candidates: Spot[], maxStops: number): Spot[] {
   const remaining = [...candidates];
   const order: Spot[] = [];
   let currentPos: LatLng = origin;
-  let firstPick = true;
 
   while (remaining.length > 0 && order.length < maxStops) {
     remaining.sort((a, b) => haversineDistanceKm(currentPos, a) - haversineDistanceKm(currentPos, b));
-    const pickIndex = firstPick && skipFirstNearest && remaining.length > 1 ? 1 : 0;
-    const next = remaining[pickIndex];
+    const next = remaining[0];
 
     order.push(next);
     currentPos = next;
-    remaining.splice(pickIndex, 1);
-    firstPick = false;
+    remaining.splice(0, 1);
   }
 
   return order;
@@ -157,13 +159,20 @@ export async function buildCourses(params: SearchParams): Promise<Course[]> {
 
   if (spots.length === 0) return [];
 
-  const maxStops = MAX_STOPS_BY_PACE[params.pace];
-  const mainOrder = applyMealTiming(pickGreedyOrder(origin, spots, false, maxStops), params.mealTiming);
-  const altOrder = applyMealTiming(pickGreedyOrder(origin, spots, true, maxStops), params.mealTiming);
+  const maxStops = calcMaxStops(params.durationMinutes, params.pace);
+  const mainOrder = applyMealTiming(pickGreedyOrder(origin, spots, maxStops), params.mealTiming);
+
+  // 穴場コースは王道コースで使ったスポットを候補から除外し、必ず別の顔ぶれになるようにする
+  const usedIds = new Set(mainOrder.map((s) => s.id));
+  const altCandidates = spots.filter((s) => !usedIds.has(s.id));
+  const altOrder =
+    altCandidates.length > 0
+      ? applyMealTiming(pickGreedyOrder(origin, altCandidates, maxStops), params.mealTiming)
+      : [];
 
   const [mainStops, altStops] = await Promise.all([
     refineWithRealDurations(origin, mainOrder, params),
-    refineWithRealDurations(origin, altOrder, params),
+    altOrder.length > 0 ? refineWithRealDurations(origin, altOrder, params) : Promise.resolve<CourseStop[]>([]),
   ]);
 
   const courses: Course[] = [
@@ -177,11 +186,7 @@ export async function buildCourses(params: SearchParams): Promise<Course[]> {
     },
   ];
 
-  const isDifferentFromMain =
-    altStops.length > 0 &&
-    altStops.map((s) => s.spot.id).join(",") !== mainStops.map((s) => s.spot.id).join(",");
-
-  if (isDifferentFromMain) {
+  if (altStops.length > 0) {
     courses.push({
       id: "course-alt",
       title: "穴場コース",
