@@ -15,38 +15,40 @@
 
 ## 現状の実装状況
 
-Google Maps APIキー未取得のため、**Places/Directions/Maps JS API 連携前のモック実装**まで完了。
-UI・周回コース生成ロジックはモックデータで動作確認済み。APIキー取得後に以下を差し替える。
+Google Maps Platform（Places / Directions / Maps JavaScript の3API）と実データ連携済み。
+モックデータは全て廃止し、`app/api/spots` `app/api/directions` の Route Handler 経由で実データを取得している。
 
-| モック実装 | 置き換え先 |
-|---|---|
-| `lib/mock-spots.ts` | Places API（Nearby Search / Text Search）によるスポット取得 |
-| `lib/course-builder.ts` の `haversineDistanceKm` + 固定倍率での移動時間近似 | Directions API（Distance Matrix）による実移動時間 |
-| `components/MapPlaceholder.tsx` | Maps JavaScript API による実地図表示（ピン＋周回ルート線） |
-| `lib/mock-events.ts` | 季節イベント/お得情報のキュレーション管理（当面は手動更新のJSON/CMSを想定） |
+**保留中**: 季節イベント/お得情報機能。実店舗のPlace IDに対応するキュレーションデータの管理基盤（手動更新JSON/CMS等）が未設計のため、`CourseStop.events` は常に空配列を返す状態。設計時は `lib/types.ts` の `SeasonalEvent` 型を流用する想定。
+
+## APIキー運用
+
+- `GOOGLE_MAPS_API_KEY`（`.env.local`, サーバー専用）: Places / Directions を Route Handler からのみ呼び出す
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`（`.env.local`, クライアント公開）: Maps JavaScript API の地図表示に使用。ブラウザに露出する前提のキーのため、**本番公開前に別キーへ分離しHTTPリファラー制限をかけること**（現状は開発用に同一キーを流用中）
+- Vercelにデプロイする場合は上記2つの環境変数をVercel側にも設定する必要がある
 
 ## ファイルマップ
 
 ```
-app/page.tsx              入力フォーム→コース生成→結果表示のメインページ
-components/InputForm.tsx  6項目（気分・予算・行動範囲・移動手段・時間・人数）の入力フォーム
-components/CourseCard.tsx 生成された周回コースの表示（訪問順・移動時間・イベント情報）
-components/MapPlaceholder.tsx  地図表示部分（APIキー設定まではプレースホルダー）
-lib/types.ts               SearchParams / Spot / Course などの型定義
-lib/moods.ts                気分・予算・移動手段・人数などの選択肢定義
-lib/mock-spots.ts           MVPデモ用ダミースポットデータ（渋谷〜恵比寿〜代官山）
-lib/mock-events.ts          MVPデモ用ダミー季節イベント・お得情報
-lib/course-builder.ts       候補地フィルタ＋貪欲法による周回コース生成ロジック
+app/page.tsx                    入力フォーム→コース生成(非同期)→結果表示のメインページ
+app/api/spots/route.ts          Places API(Text Search + Nearby Search)のプロキシ。mood別のtype/keywordでスポット検索
+app/api/directions/route.ts     Directions APIのプロキシ。2地点+移動手段から実移動時間(分)を返す
+components/InputForm.tsx        6項目（気分・予算・行動範囲・移動手段・時間・人数）の入力フォーム
+components/CourseCard.tsx       生成された周回コースの表示（訪問順・移動時間・イベント情報）
+components/CourseMap.tsx        Maps JavaScript APIによる実地図表示（ピン＋周回ルート線）
+lib/types.ts                    SearchParams / Spot / Course などの型定義
+lib/moods.ts                    気分・予算・移動手段・人数などの選択肢定義
+lib/course-builder.ts           /api/spots・/api/directions を呼び出して周回コースを生成する非同期ロジック
 ```
 
 ## 周回コース生成ロジックの方針
 
-- スポット数が少ない（十数件程度）ためTSPの厳密解は不要。貪欲法（現在地から最寄りの未訪問候補地を順に選ぶ）で実用十分なルートを生成
-- 移動時間は直線距離 ÷ 移動手段別の想定速度 × 1.3（信号待ち・乗換等の補正）で近似。Directions API連携後はこの補正を撤廃し実測値に置き換える
-- 「王道コース」「穴場コース」の2パターンは、貪欲法の起点選択を変える（最寄り優先 or 2番目に近い候補から開始）ことで多様性を出している。パターンを増やす場合はこの分岐ロジックを拡張する
+- スポット数が少ない（1エリアあたり十数件程度）ためTSPの厳密解は不要。まず直線距離ベースの貪欲法で訪問順を仮決め（`pickGreedyOrder`、APIコール無し・高速）
+- 仮決めした順路に沿って `refineWithRealDurations` がDirections APIを1区間ずつ呼び出し、実移動時間で到着/出発オフセットを再計算。時間予算を超える手前で打ち切る
+- Directions API呼び出しが失敗した場合は直線距離からの概算（想定速度×1.3の補正）にフォールバックし、コース生成自体は止めない
+- 「王道コース」「穴場コース」の2パターンは、貪欲法の起点選択を変える（最寄り優先 or 2番目に近い候補から開始）ことで多様性を出している
 
-## Next Step（ユーザー側アクション）
+## Next Step
 
-1. Google Cloud Console で Places API / Directions API / Maps JavaScript API を有効化し、APIキーを取得
-2. 公開サービスのため、APIキーはNext.jsのRoute Handler経由でサーバーサイドから呼び出す設計とし、クライアントに直接キーを渡さない（利用量上限・リファラ制限も要設定）
-3. APIキー取得後、上記「現状の実装状況」の対応表に沿ってモック実装を実データに置き換える
+1. 季節イベント/お得情報のキュレーション基盤を設計（実店舗のPlace IDにどう紐付けるか）
+2. 本番公開前に Maps JavaScript API 用キーをHTTPリファラー制限付きの別キーに分離
+3. Vercelへのデプロイ・環境変数設定
