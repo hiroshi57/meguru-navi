@@ -1,3 +1,5 @@
+import Image from "next/image";
+import { SpotReviews } from "@/components/SpotReviews";
 import { Course } from "@/lib/types";
 
 function formatMinutes(minutes: number): string {
@@ -39,13 +41,37 @@ export function CourseCard({ course }: { course: Course }) {
                 <span>到着 +{stop.arrivalOffsetMinutes}分</span>
                 <span>滞在 約{stop.spot.stayMinutes}分</span>
               </div>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="font-medium">{stop.spot.name}</span>
                 <span className="rounded bg-black/5 px-1.5 py-0.5 text-[11px] text-black/50">
                   {stop.spot.category}
                 </span>
+                {stop.spot.rating !== undefined && (
+                  <span className="text-xs text-amber-600">
+                    ★{stop.spot.rating.toFixed(1)}
+                    {stop.spot.userRatingsTotal !== undefined && (
+                      <span className="text-black/40">（{stop.spot.userRatingsTotal}件）</span>
+                    )}
+                  </span>
+                )}
               </div>
+
+              {stop.spot.photoRef && (
+                <div className="relative mt-2 h-32 w-full max-w-sm overflow-hidden rounded-lg bg-black/5">
+                  <Image
+                    src={`/api/photo?ref=${encodeURIComponent(stop.spot.photoRef)}&maxwidth=600`}
+                    alt={stop.spot.name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
+              )}
+
               <p className="mt-1 text-sm text-black/60">{stop.spot.description}</p>
+
+              <SpotReviews placeId={stop.spot.id} />
+
               {stop.events.length > 0 && (
                 <div className="mt-2 flex flex-col gap-1">
                   {stop.events.map((event) => (

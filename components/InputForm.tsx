@@ -1,8 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { BUDGETS, DURATION_OPTIONS, MOODS, PARTY_SIZE_OPTIONS, TRANSPORTS } from "@/lib/moods";
-import { SearchParams } from "@/lib/types";
+import {
+  AGE_BRACKETS,
+  BUDGETS,
+  CUISINES,
+  DURATION_OPTIONS,
+  INDOOR_OUTDOOR_OPTIONS,
+  MEAL_TIMINGS,
+  MOODS,
+  PACES,
+  PARTY_SIZE_OPTIONS,
+  PURPOSES,
+  SPECIAL_CONDITIONS,
+  TRANSPORTS,
+  VIBES,
+} from "@/lib/moods";
+import { SearchParams, SpecialCondition } from "@/lib/types";
 
 const DEFAULT_PARAMS: SearchParams = {
   mood: "mattari",
@@ -11,10 +25,28 @@ const DEFAULT_PARAMS: SearchParams = {
   transport: "walk",
   durationMinutes: 120,
   partySize: 2,
+  ageBracket: "30s",
+  purpose: "sightseeing",
+  vibe: "calm",
+  pace: "relaxed",
+  mealTiming: "any",
+  indoorOutdoor: "either",
+  specialConditions: [],
+  cuisine: "any",
 };
 
 export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => void | Promise<void> }) {
   const [params, setParams] = useState<SearchParams>(DEFAULT_PARAMS);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const toggleSpecialCondition = (condition: SpecialCondition) => {
+    setParams((p) => ({
+      ...p,
+      specialConditions: p.specialConditions.includes(condition)
+        ? p.specialConditions.filter((c) => c !== condition)
+        : [...p.specialConditions, condition],
+    }));
+  };
 
   return (
     <form
@@ -43,6 +75,28 @@ export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => vo
             </button>
           ))}
         </div>
+
+        {params.mood === "gourmet" && (
+          <div className="mt-3">
+            <label className="mb-2 block text-sm font-medium text-black/70">料理ジャンル</label>
+            <div className="flex flex-wrap gap-2">
+              {CUISINES.map((c) => (
+                <button
+                  type="button"
+                  key={c.id}
+                  onClick={() => setParams((p) => ({ ...p, cuisine: c.id }))}
+                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                    params.cuisine === c.id
+                      ? "border-emerald-600 bg-emerald-50 text-emerald-800"
+                      : "border-black/10 hover:border-black/30"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -117,9 +171,140 @@ export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => vo
           onChange={(e) => setParams((p) => ({ ...p, areaLabel: e.target.value }))}
         />
         <p className="mt-1 text-xs text-black/40">
-          MVPでは東京23区内のサンプルデータのみ対応しています。
+          MVPでは東京23区内のみ対応しています。
         </p>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        className="flex items-center justify-between rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-black/70 hover:border-black/30"
+      >
+        詳しく指定する（年代・目的・雰囲気など）
+        <span className="text-xs text-black/40">{showDetails ? "閉じる ▲" : "開く ▼"}</span>
+      </button>
+
+      {showDetails && (
+        <div className="flex flex-col gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">年代</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.ageBracket}
+                onChange={(e) => setParams((p) => ({ ...p, ageBracket: e.target.value as SearchParams["ageBracket"] }))}
+              >
+                {AGE_BRACKETS.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">目的</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.purpose}
+                onChange={(e) => setParams((p) => ({ ...p, purpose: e.target.value as SearchParams["purpose"] }))}
+              >
+                {PURPOSES.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-black/40">
+                {PURPOSES.find((p) => p.id === params.purpose)?.description}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">雰囲気の好み</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.vibe}
+                onChange={(e) => setParams((p) => ({ ...p, vibe: e.target.value as SearchParams["vibe"] }))}
+              >
+                {VIBES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">体力・移動ペース</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.pace}
+                onChange={(e) => setParams((p) => ({ ...p, pace: e.target.value as SearchParams["pace"] }))}
+              >
+                {PACES.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">食事を挟むタイミング</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.mealTiming}
+                onChange={(e) => setParams((p) => ({ ...p, mealTiming: e.target.value as SearchParams["mealTiming"] }))}
+              >
+                {MEAL_TIMINGS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-black/70">屋内外の希望</label>
+              <select
+                className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
+                value={params.indoorOutdoor}
+                onChange={(e) => setParams((p) => ({ ...p, indoorOutdoor: e.target.value as SearchParams["indoorOutdoor"] }))}
+              >
+                {INDOOR_OUTDOOR_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-black/70">こだわり条件（複数選択可）</label>
+            <div className="flex flex-wrap gap-2">
+              {SPECIAL_CONDITIONS.map((c) => (
+                <button
+                  type="button"
+                  key={c.id}
+                  onClick={() => toggleSpecialCondition(c.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                    params.specialConditions.includes(c.id)
+                      ? "border-emerald-600 bg-emerald-50 text-emerald-800"
+                      : "border-black/10 hover:border-black/30"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-black/40">
+              ※ Google Places側の情報の限界により、これらの条件は検索の重み付けに使うベストエフォート対応です（完全な保証はできません）
+            </p>
+          </div>
+        </div>
+      )}
 
       <button
         type="submit"
