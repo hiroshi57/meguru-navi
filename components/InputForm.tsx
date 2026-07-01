@@ -13,7 +13,7 @@ const DEFAULT_PARAMS: SearchParams = {
   partySize: 2,
 };
 
-export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => void }) {
+export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => void | Promise<void> }) {
   const [params, setParams] = useState<SearchParams>(DEFAULT_PARAMS);
 
   return (
@@ -21,7 +21,7 @@ export function InputForm({ onSubmit }: { onSubmit: (params: SearchParams) => vo
       className="flex flex-col gap-6 rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(params);
+        void onSubmit(params);
       }}
     >
       <div>

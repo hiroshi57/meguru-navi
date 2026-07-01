@@ -1,3 +1,8 @@
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
 export type MoodId = "mattari" | "gourmet" | "active" | "photo";
 
 export interface MoodDefinition {
@@ -54,5 +59,6 @@ export interface Course {
   title: string;
   tag: string;
   totalMinutes: number;
+  origin: LatLng;
   stops: CourseStop[];
 }

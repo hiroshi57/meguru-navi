@@ -2,18 +2,33 @@
 
 import { useState } from "react";
 import { CourseCard } from "@/components/CourseCard";
+import { CourseMap } from "@/components/CourseMap";
 import { InputForm } from "@/components/InputForm";
-import { MapPlaceholder } from "@/components/MapPlaceholder";
 import { buildCourses } from "@/lib/course-builder";
 import { Course, SearchParams } from "@/lib/types";
 
+type Status = "idle" | "loading" | "error";
+
 export default function Home() {
+  const [status, setStatus] = useState<Status>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [lastParams, setLastParams] = useState<SearchParams | null>(null);
 
-  const handleSubmit = (params: SearchParams) => {
+  const handleSubmit = async (params: SearchParams) => {
     setLastParams(params);
-    setCourses(buildCourses(params));
+    setStatus("loading");
+    setErrorMessage(null);
+    setCourses(null);
+
+    try {
+      const result = await buildCourses(params);
+      setCourses(result);
+      setStatus("idle");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "コース生成に失敗しました");
+      setStatus("error");
+    }
   };
 
   return (
@@ -24,19 +39,27 @@ export default function Home() {
           今の気分・予算・移動手段・時間を入れるだけで、時間内に周れる散策コースを提案します。
         </p>
         <p className="mt-1 text-xs text-amber-600">
-          ※ 現在はサンプルデータで動作するMVP版です（東京23区の一部エリアのみ・実店舗情報ではありません）
+          ※ MVP版です（東京23区の一部エリアのみ対応・Google Placesのデータをそのまま利用しています）
         </p>
       </header>
 
       <InputForm onSubmit={handleSubmit} />
 
-      {courses && courses.length === 0 && (
+      {status === "loading" && (
+        <p className="text-center text-sm text-black/50">コースを検索しています…</p>
+      )}
+
+      {status === "error" && (
+        <p className="text-center text-sm text-red-600">{errorMessage}</p>
+      )}
+
+      {status === "idle" && courses && courses.length === 0 && (
         <p className="text-center text-sm text-black/50">
           条件に合うコースが見つかりませんでした。移動時間や予算を変えて試してください。
         </p>
       )}
 
-      {courses && courses.length > 0 && (
+      {status === "idle" && courses && courses.length > 0 && (
         <div className="flex flex-col gap-6">
           <h2 className="text-lg font-semibold">
             {lastParams?.areaLabel} を起点にした提案コース
@@ -44,7 +67,7 @@ export default function Home() {
           {courses.map((course) => (
             <div key={course.id} className="flex flex-col gap-3">
               <CourseCard course={course} />
-              <MapPlaceholder course={course} />
+              <CourseMap course={course} />
             </div>
           ))}
         </div>
